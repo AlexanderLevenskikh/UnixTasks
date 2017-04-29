@@ -1,5 +1,7 @@
 #!/bin/bash 
 
+trap exitHandler EXIT
+
 game_pipe=/tmp/game_pipe
 helper_pipe=/tmp/helper_pipe
 
@@ -10,7 +12,19 @@ isFirst=true
 isPlayer=true
 isMyTurn=true
 
-function initGame(){
+winConfigurationsMasks=( 7 56 448 73 146 292 273 84 )
+
+function exitHandler() {
+    tput sgr0
+    tput cnorm
+    stty echo
+    rm -f $game_pipe 	
+    rm -f $helper_pipe
+    tput clear
+    exit
+}
+
+function initGame() {
     tput civis
     tput clear
     printHeader
@@ -79,16 +93,16 @@ function printFooterHelp() {
             mySymbol=x
         fi
         
-        tput cup 10 3
+        tput cup 11 3
         echo Your symbol is "$mySymbol"
 
-        tput cup 12 3
-        echo Press 1-9 to make a turn
         tput cup 13 3
-        echo 1 2 3
+        echo Press 1-9 to make a turn
         tput cup 14 3
-        echo 4 5 6
+        echo 1 2 3
         tput cup 15 3
+        echo 4 5 6
+        tput cup 16 3
         echo 7 8 9
     else 
         tput cup 7 3
@@ -112,6 +126,39 @@ function makeTurn() {
 }
 
 
+
+function isAnyPlayerWin() {
+    local result=false
+    local winner;
+    
+    for i in "${winConfigurationsMasks[@]}"
+    do
+       let "resultStateAnd = state & i"
+       let "resultSymbolAnd = symbol & i"
+       
+       if [[ $resultStateAnd = $i ]]; then
+            if [[ $resultSymbolAnd = 0 ]]; then
+                result=true;
+                winner=Second
+            elif [[ $resultSymbolAnd = $i ]]; then 
+                result=true;
+                winner=First
+            fi
+       fi
+    done
+    
+    if $result; then    
+        tput cup 8 3
+        tput ed
+        echo "$winner player is win!"
+        tput cup 9 3
+        echo "Press any key to exit"
+        read -n 1
+        exitHandler       
+    fi
+}
+
+
 if [[ -p $game_pipe ]]; then
         isFirst=false
         if [[ -p $helper_pipe ]]; then
@@ -131,21 +178,31 @@ if $isPlayer; then
     while :; do
         if $isMyTurn; then 
             tput cup 8 3
+            tput el
             echo Your turn
-            stty -echo
-            read -n 1 turn
+            
+            turn=-
+            while  [[ !("$turn" =~ [1-9]) ]]; do 
+                stty -echo
+                read -n 1 turn
+                stty echo
+                tput cup 9 3
+                tput el
+                echo Only 1-9!
+            done;
+            
             stty echo
-            tput cup 8 3
+            tput cup 9 3
             tput el
             echo Your turn is $turn
             echo "$turn" > "$game_pipe"
             makeTurn $turn $isMyTurn
             
             let "helperPipeValue = state * 512 + symbol"
-            echo $helperPipeValue
             echo "$helperPipeValue" > "$helper_pipe" &
             
             printContent
+            isAnyPlayerWin
             
             isMyTurn=false
         else 
@@ -155,7 +212,10 @@ if $isPlayer; then
             stty -echo
             read enemyTurn < "$game_pipe" 
             makeTurn $enemyTurn $isMyTurn
+            
             printContent
+            isAnyPlayerWin
+            
             isMyTurn=true
         fi
     done;
