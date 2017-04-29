@@ -1,7 +1,5 @@
 #!/bin/bash 
 
-trap exitHandler EXIT
-
 game_pipe=/tmp/game_pipe
 helper_pipe=/tmp/helper_pipe
 
@@ -20,6 +18,18 @@ function exitHandler() {
     stty echo
     rm -f $game_pipe 	
     rm -f $helper_pipe
+    tput clear
+    exit
+}
+
+function observerExitHandler() {
+    tput sgr0
+    tput cnorm
+    stty echo
+    if [[ -p $helperPipeValue ]]; then
+        let "helperPipeValue = state * 512 + symbol"
+        echo "$helperPipeValue" > "$helper_pipe" &
+    fi
     tput clear
     exit
 }
@@ -105,7 +115,7 @@ function printFooterHelp() {
         tput cup 16 3
         echo 7 8 9
     else 
-        tput cup 7 3
+        tput cup 8 3
         echo You are the game observer
     fi
 }
@@ -184,6 +194,8 @@ initGame;
 
 
 if $isPlayer; then 
+    trap exitHandler EXIT
+
     while :; do
         if $isMyTurn; then 
             tput cup 8 3
@@ -241,6 +253,15 @@ if $isPlayer; then
         fi
     done;
 else 
-    read observerData < "$helper_pipe"
-    echo $observerData
+    trap observerExitHandler EXIT
+
+    while :; do 
+        read observerData < "$helper_pipe"
+        let "state = observerData >> 9"
+        let "symbol = observerData % 512"
+        printContent
+        isAnyPlayerWin
+        isDraw
+    done
+    
 fi
