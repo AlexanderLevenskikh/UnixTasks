@@ -115,8 +115,7 @@ function makeTurn() {
     # $2 == my (true) or enemy (false) turn
     local mask
     local turn=$1
-    ((turn--))
-    let "mask = 2 ** $turn"
+    let "mask = 2 ** (turn - 1)"
     let "state = state | mask"
     
 
@@ -124,8 +123,6 @@ function makeTurn() {
         let "symbol = symbol | mask"
     fi
 }
-
-
 
 function isAnyPlayerWin() {
     local result=false
@@ -155,6 +152,18 @@ function isAnyPlayerWin() {
         echo "Press any key to exit"
         read -n 1
         exitHandler       
+    fi
+}
+
+function isDraw() {
+    if [[ $state = 511 ]]; then
+        tput cup 8 3
+        tput ed
+        echo "Draw!"
+        tput cup 9 3
+        echo "Press any key to exit"
+        read -n 1
+        exitHandler  
     fi
 }
 
@@ -191,20 +200,31 @@ if $isPlayer; then
                 echo Only 1-9!
             done;
             
-            stty echo
-            tput cup 9 3
-            tput el
-            echo Your turn is $turn
-            echo "$turn" > "$game_pipe"
-            makeTurn $turn $isMyTurn
+            let "isCellEmptyMask = 2 ** (turn - 1)"
+            let "isCellEmptyResult = state & isCellEmptyMask"
             
-            let "helperPipeValue = state * 512 + symbol"
-            echo "$helperPipeValue" > "$helper_pipe" &
+            if [[ $isCellEmptyResult = 0 ]]; then
+                stty echo
+                tput cup 9 3
+                tput el
+                echo Your turn is $turn
+                echo "$turn" > "$game_pipe"
+                makeTurn $turn $isMyTurn
+                
+                let "helperPipeValue = state * 512 + symbol"
+                echo "$helperPipeValue" > "$helper_pipe" &
+                
+                printContent
+                isAnyPlayerWin
+                isDraw
+                
+                isMyTurn=false
+            else 
+                tput cup 9 3
+                tput el
+                echo Cell $turn is not empty
+            fi           
             
-            printContent
-            isAnyPlayerWin
-            
-            isMyTurn=false
         else 
             tput cup 8 3
             tput el
@@ -215,6 +235,7 @@ if $isPlayer; then
             
             printContent
             isAnyPlayerWin
+            isDraw
             
             isMyTurn=true
         fi
