@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
+#include <wait.h>
 
 #include <vector>
 #include <string>
@@ -10,11 +12,15 @@
 #include <algorithm>
 
 #define BUFFSIZE 4096
+#define TIMELIMIT 5
 
 void err_sys(const char* x);
 void sprintfFileError(char* filename, const char* message);
 void addNumbersFromFile(char * filename, std::vector<std::string> * v);
 bool stringComparator(std::string &s1, std::string &s2);
+void sortingProcedure(std::vector <std::string> *numbers);
+
+int pid;
 
 int main(int argc, char ** argv) {
     int filesCount = argc - 1;
@@ -32,7 +38,7 @@ int main(int argc, char ** argv) {
         addNumbersFromFile(argv[i], numbers);
     }
 
-    std::sort(numbers->begin(), numbers->end(), stringComparator);
+    sortingProcedure(numbers);
 
     int outputFd;
     if ((outputFd = creat(outputFileName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
@@ -47,6 +53,32 @@ int main(int argc, char ** argv) {
     }
 
 
+}
+
+void timeLimitExceed() {
+    kill(pid, SIGKILL);
+    err_sys("Sort is broken (time limit exceed)");
+}
+
+void sortingProcedure(std::vector <std::string> *numbers) {
+    if ((pid = fork()) < 0) {
+        err_sys("Can't fork the process");
+    } else if (pid == 0) {
+        // return to child process
+        alarm(TIMELIMIT);
+        sleep(1);
+        std::sort(numbers->begin(), numbers->end(), stringComparator);
+    } else {
+        // return to parent process
+        int status;
+        wait(&status);
+        if (WIFSIGNALED(status)) {
+            if (WTERMSIG(status) == SIGALRM) {
+                timeLimitExceed();
+            }
+        }
+        exit(0);
+    }
 }
 
 void addNumbersFromFile(char * filename, std::vector<std::string> * v) {
