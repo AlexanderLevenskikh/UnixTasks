@@ -21,13 +21,20 @@ bool stringComparator(std::string &s1, std::string &s2);
 void sortingProcedure(std::vector <std::string> *numbers);
 
 int pid;
+bool setSimulatedDelayInChild = false;
 
 int main(int argc, char ** argv) {
     int filesCount = argc - 1;
+
+    if (strcmp(argv[filesCount], "--broke-sort") == 0) {
+        setSimulatedDelayInChild = true;
+        filesCount--;
+    }
+
     char *outputFileName;
 
     if (filesCount < 1) {
-        err_sys("Format: app inputFile1 [...inputFileN] outputFile");
+        err_sys("Format: app inputFile1 [...inputFileN] outputFile [--broke-sort]");
     } else {
         outputFileName = argv[filesCount];
     }
@@ -66,7 +73,9 @@ void sortingProcedure(std::vector <std::string> *numbers) {
     } else if (pid == 0) {
         // return to child process
         alarm(TIMELIMIT);
-        sleep(1);
+        if (setSimulatedDelayInChild) {
+            sleep(5);
+        }
         std::sort(numbers->begin(), numbers->end(), stringComparator);
     } else {
         // return to parent process
