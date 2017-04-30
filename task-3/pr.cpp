@@ -2,13 +2,17 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <vector>
 #include <string>
 #include <iostream>
 #include <algorithm>
 
+#define BUFFSIZE 4096
+
 void err_sys(const char* x);
+void sprintfFileError(char* filename, const char* message);
 void addNumbersFromFile(char * filename, std::vector<std::string> * v);
 bool stringComparator(std::string &s1, std::string &s2);
 
@@ -18,22 +22,28 @@ int main(int argc, char ** argv) {
 
     if (filesCount < 1) {
         err_sys("Format: app inputFile1 [...inputFileN] outputFile");
-    } else if (filesCount == 1) {
-        outputFileName = "result";
     } else {
         outputFileName = argv[filesCount];
     }
 
     std::vector <std::string> *numbers = new std::vector<std::string>();
 
-    for (int i = 1; i <= filesCount; i++) {
+    for (int i = 1; i < filesCount; i++) {
         addNumbersFromFile(argv[i], numbers);
     }
 
     std::sort(numbers->begin(), numbers->end(), stringComparator);
 
+    int outputFd;
+    if ((outputFd = creat(outputFileName, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
+        sprintfFileError(outputFileName, "Can't create file %s for write.");
+    }
+
     for (std::vector<std::string>::iterator it = numbers->begin(); it != numbers->end(); it++) {
-        std::cout << *it << "\n";
+        const char *buf = it->c_str();
+        if (dprintf(outputFd, "%s \n", buf) < strlen(buf) + 2) {
+            sprintfFileError(outputFileName, "Can't write to file %s.");
+        }
     }
 
 
@@ -43,9 +53,7 @@ void addNumbersFromFile(char * filename, std::vector<std::string> * v) {
     int fd;
 
     if ((fd = open(filename, O_RDONLY)) < 0) {
-        char * error_msg;
-        sprintf(error_msg, "Can't open file %s for read.", filename);
-        err_sys(error_msg);
+        sprintfFileError(filename, "Can't open file %s for read.");
     }
 
     int n;
@@ -74,6 +82,12 @@ bool stringComparator(std::string &s1, std::string &s2) {
             return false;
         else
     return (s1 < s2);
+}
+
+void sprintfFileError(char* filename, const char* message) {
+    char * error_msg_buf = new char[BUFFSIZE];
+    snprintf(error_msg_buf, BUFFSIZE, message, filename);
+    err_sys(error_msg_buf);
 }
 
 void err_sys(const char* x)
