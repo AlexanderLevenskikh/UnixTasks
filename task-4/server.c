@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/mman.h>
 
 #define BUFSIZE 4096
 #define PORT 8090
@@ -18,14 +19,25 @@
 #define INITIAL_CONF_FILENAME "initialConfiguration"
 
 void err_sys(char *message);
-void initLifeBoard(char gameBoard[][LIFE_COLUMNS]);
-void startListener(char gameBoard[][LIFE_COLUMNS]);
+void initLifeBoard();
+void startListener();
 int initServer();
 void gameStep();
+void exitHandler(int sig);
+
+volatile char *lifeGameBoard;
 
 void main(int argc, char ** argv) {
-    char lifeGameBoard[LIFE_ROWS][LIFE_COLUMNS];
-    initLifeBoard(lifeGameBoard);
+
+    // space for shared board
+    lifeGameBoard = mmap(0, LIFE_ROWS*LIFE_COLUMNS*sizeof(char), PROT_READ|PROT_WRITE,
+              MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (!lifeGameBoard) {
+        err_sys("Mmap failed");
+    }
+    memset((void *)lifeGameBoard, '.', LIFE_ROWS*LIFE_COLUMNS*sizeof(char));
+
+    initLifeBoard();
 
     int pid = fork();
 
@@ -40,32 +52,72 @@ void main(int argc, char ** argv) {
             else if (child_pid == 0) {
                 gameStep();
             } else {
-                sleep(5);
+                sleep(2);
                 int status;
                 pid_t result = waitpid(child_pid, &status, WNOHANG);
                 if (result == 0) {
                   err_sys("alive");
                 } else if (result == -1) {
                   err_sys("error");
+                } else {
+                    for (int i = 0; i < LIFE_ROWS; i++) {
+                        printf("\n");
+                        for (int j = 0; j < LIFE_COLUMNS; j++)
+                            printf("%c", lifeGameBoard[i*LIFE_ROWS+j]);
+                    }
+                    printf("\n\n");
                 }
             }
         }
 
     } else {
         // server listener
-        startListener(lifeGameBoard);
+        signal(SIGINT, exitHandler);
+        startListener();
     }
 
 
 }
 
+void exitHandler(int sig) {
+	printf("Exit program\n");
+	munmap(lifeGameBoard , LIFE_ROWS * LIFE_COLUMNS * sizeof(char));
+	exit(0);
+}
+
+int getAliveAroundNumber(int x, int y) {
+    int result = 0, x1, y1;
+
+    for (int i = -1; i <= 1; i++)
+    for (int j = -1; j <= 1; j++) {
+        x1 = x+i; y1 = y+j;
+        if ((x1 || y1) && x1 >= 0 && x1 < LIFE_COLUMNS && y1 >= 0 && y1 < LIFE_ROWS && lifeGameBoard[y1*LIFE_ROWS+x1] == 'x')
+            result++;
+    }
+    return result;
+}
+
 void gameStep() {
-    sleep(4);
-    printf("child %d \n", getpid());
+    char lifeGameBoardCopy[LIFE_ROWS][LIFE_COLUMNS];
+
+    for (int i = 0; i < LIFE_ROWS; i++) {
+        for (int j = 0; j < LIFE_COLUMNS; j++) {
+            int number = getAliveAroundNumber(j, i);
+            if (number == 3) lifeGameBoardCopy[i][j] = 'x';
+            if (number < 2 || number > 3) lifeGameBoardCopy[i][j] = '.';
+            if (number == 2) lifeGameBoardCopy[i][j] = lifeGameBoard[i*LIFE_ROWS+j];
+        }
+    }
+
+
+    for (int i = 0; i < LIFE_ROWS; i++)
+    for (int j = 0; j < LIFE_COLUMNS; j++)
+        lifeGameBoard[i*LIFE_ROWS+j] = lifeGameBoardCopy[i][j];
+
     exit(0);
 }
 
-void startListener(char gameBoard[][LIFE_COLUMNS]) {
+void startListener() {
     int sockFd, n, clientlen;
     char *hostaddrp;
     struct sockaddr_in clientaddr;
@@ -122,23 +174,25 @@ int initServer() {
     return sockFd;
 }
 
-void initLifeBoard(char gameBoard[][LIFE_COLUMNS]) {
+void initLifeBoard() {
     int fd, n;
     char newline;
+    char buffer[BUFSIZE];
 
     if ((fd = open(INITIAL_CONF_FILENAME, O_RDONLY)) < 0) {
         err_sys("Can't open file with configuration");
     }
 
-    for (int i = 0; i < LIFE_ROWS; i++) {
-        if ((n = read(fd, gameBoard[i], LIFE_COLUMNS * sizeof(char))) < 0) {
-            err_sys("Error while reading configuration file (incorrect format)");
-        }
-        // for newline
-        if ((n = read(fd, &newline, sizeof(char))) < 0) {
-            err_sys("Error while reading configuration file (incorrect format)");
-        }
+    if ((n = read(fd, buffer, LIFE_ROWS*(LIFE_COLUMNS+1)*sizeof(char))) < 0) {
+        err_sys("Error while reading configuration file (incorrect format)");
     }
+
+    for (int i = 0; i < LIFE_ROWS; i++)
+    for (int j = 0; j < LIFE_COLUMNS; j++) {
+        lifeGameBoard[i*LIFE_ROWS + j] = buffer[i*(LIFE_ROWS+1) + j];
+    }
+
+
 }
 
 void err_sys(char *message) {
