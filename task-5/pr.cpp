@@ -44,7 +44,7 @@ void err_sys(const char *);
 std::set<pid_t> pid_set;
 
 int main() {
-    unsigned int fd;
+    /*unsigned int fd;
     struct rlimit flim;
 
     if (getppid() != 1){
@@ -57,18 +57,17 @@ int main() {
     }
     getrlimit(RLIMIT_NOFILE, &flim);
     for (fd=0; fd < flim.rlim_max; fd++)
-        close(fd);
+        close(fd);*/
 
     chdir("/");
-    openlog("Task manager daemon is open", LOG_PID | LOG_CONS, LOG_DAEMON);
-    syslog(LOG_INFO, "Task Manager started (pid: %d)", getpid());
-
+    openlog("TASK MANAGER", LOG_PID | LOG_CONS, LOG_DAEMON);
+    syslog(LOG_INFO, "Started (pid: %d)", getpid());
 
     process_config();
 }
 
 void process_config() {
-    std::ifstream infile(CONFIG_FILE);
+    std::ifstream infile("/home/alex/Desktop/config");
     std::string str,
                 delimiter = " ";
 
@@ -82,6 +81,7 @@ void process_config() {
                 tokens.push_back(token);
             }
             tokens.push_back(str.substr(last, next - last));
+            syslog(LOG_INFO, "Parsing string %s and executing process", str.c_str());
             execute_process(tokens);
         }
     }
@@ -100,11 +100,11 @@ void execute_process(std::vector<std::string> &configuration) {
     pid_t pid;
     switch (pid = fork()) {
         case -1:
-            syslog(LOG_ERR, "Fork failed");
-            err_sys("Can't fork process");
+            syslog(LOG_ERR, "Fork in proc %d failed", getppid());
             break;
         case 0:
             if (isRespawn) {
+
                 while (1) {
                     execute_once_fork(arguments, program, isRespawn);
                     sleep(5);
@@ -115,7 +115,9 @@ void execute_process(std::vector<std::string> &configuration) {
             exit(0);
 
         default:
+            syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getppid());
             pid_set.insert(pid);
+            syslog(LOG_INFO, "Set pid %d in file /tmp/%s", pid, program.c_str());
             update_pid(program, pid);
             break;
     }
@@ -127,17 +129,20 @@ void execute_once_fork(std::vector<std::string> &arguments, std::string &program
     switch (pid = fork()) {
         case -1:
             // logging
-            err_sys("Can't fork process");
+            syslog(LOG_ERR, "Fork in proc %d failed", getppid());
             break;
         case 0:
             execute_program(arguments, program_name);
             exit(0);
 
         default:
+            syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getppid());
             pid_set.insert(pid);
+            syslog(LOG_INFO, "Set pid %d in file /tmp/%s", pid, program_name.c_str());
             update_pid(program_name, pid);
+            syslog(LOG_INFO, "Wait process pid %d executing", pid);
             waitpid(pid, NULL, 0);
-            // log that program executed successfully
+            syslog(LOG_INFO, "Process pid %d executed", pid);
             pid_set.erase(pid);
             if (!isRespawn) {
                 remove_pid_file(program_name);
@@ -160,11 +165,11 @@ void execute_program(std::vector<std::string> &arguments, std::string &program_n
     while(1){
         if (attempts_count == ATTEMPTS_MAX){
             attempts_count = 0;
-            // log! so many attempts
-            sleep(60*60);
+            syslog(LOG_WARNING, "So many execution attempts of %s. Try again after 30 min.", program_name.c_str());
+            sleep(1800);
         }
-        if (execv(strdup(program_name.c_str()), exec_args) < 0){
-            // log fail
+        if (execvp(strdup(program_name.c_str()), exec_args) < 0){
+            syslog(LOG_INFO, "Program %s execution failed. Attempt number: %d", program_name.c_str(), attempts_count);
             attempts_count++;
             continue;
         }
@@ -178,8 +183,7 @@ void update_pid(std::string name, pid_t pid) {
     int fd;
 
     if ((fd = creat(path, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
-            // log?
-        err_sys("Can't update pid file");
+        syslog(LOG_ERR, "Can't update file %s", path);
     }
 
     std::string buf = std::to_string(pid);
@@ -193,8 +197,7 @@ void remove_pid_file(std::string &program_name) {
     sprintf(path, "/tmp/%s", program_name.c_str());
 
     if ((ret = remove(path)) == -1) {
-        // log???
-        err_sys("Can't remove file");
+        syslog(LOG_ERR, "Can't remove file %s", path);
     }
 }
 
