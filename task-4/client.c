@@ -7,9 +7,11 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define BUFSIZE 4096
 #define HOSTNAME "localhost"
 #define PORT 8090
+
+#define LIFE_ROWS 5
+#define LIFE_COLUMNS 5
 
 void err_sys(char *message);
 
@@ -18,7 +20,9 @@ void main(int argc, char ** argv) {
     char *hostName, *hostaddrp;
     struct sockaddr_in serveraddr;
     struct hostent *serverHostInfo;
-    char buf[BUFSIZE];
+    char gameBoard[LIFE_ROWS*LIFE_COLUMNS], buf[1];
+
+    buf[0] = 'A';
 
     if ((sockFd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         err_sys("Can't open the socket");
@@ -36,20 +40,23 @@ void main(int argc, char ** argv) {
 	  (char *)&serveraddr.sin_addr.s_addr, serverHostInfo->h_length);
     serveraddr.sin_port = htons(PORT);
 
-    bzero(buf, BUFSIZE);
-    printf("Please enter msg: ");
-    fgets(buf, BUFSIZE, stdin);
-
     // send
     serverlen = sizeof(serveraddr);
-    if ((n = sendto(sockFd, buf, strlen(buf), 0, (const struct sockaddr *) &serveraddr, serverlen)) < 0)
+    if ((n = sendto(sockFd, buf, sizeof(buf), 0, (const struct sockaddr *) &serveraddr, serverlen)) < 0)
       err_sys("Error in sendto");
 
     // receive
-    if ((n = recvfrom(sockFd, buf, strlen(buf), 0, (struct sockaddr *) &serveraddr, &serverlen)) < 0)
+    if ((n = recvfrom(sockFd, gameBoard, LIFE_ROWS*LIFE_COLUMNS*sizeof(char), 0, (struct sockaddr *) &serveraddr, &serverlen)) < 0)
       err_sys("ERROR in recvfrom");
 
-    printf("Echo from server: %s", buf);
+      printf("Current game state\n");
+    for (int i=0; i<LIFE_ROWS; i++) {
+        for (int j=0; j<LIFE_COLUMNS; j++) {
+            printf("%c", gameBoard[i*LIFE_ROWS + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
     exit(0);
 }
 

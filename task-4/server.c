@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <stdlib.h>
 
 #define BUFSIZE 4096
 #define PORT 8090
@@ -56,10 +57,11 @@ void main(int argc, char ** argv) {
                 int status;
                 pid_t result = waitpid(child_pid, &status, WNOHANG);
                 if (result == 0) {
-                  err_sys("alive");
+                  err_sys("Game state updating is too long!");
                 } else if (result == -1) {
-                  err_sys("error");
+                  err_sys("Waitpid error");
                 } else {
+                    system("@cls||clear");
                     for (int i = 0; i < LIFE_ROWS; i++) {
                         printf("\n");
                         for (int j = 0; j < LIFE_COLUMNS; j++)
@@ -141,11 +143,8 @@ void startListener() {
         hostaddrp = inet_ntoa(clientaddr.sin_addr);
         if (hostaddrp == NULL)
             err_sys("Error on inet_ntoa\n");
-        printf("server received datagram from %s (%s)\n",
-            clientHostInfo->h_name, hostaddrp);
-        printf("server received %d/%d bytes: %s\n", (int) strlen(buf), n, buf);
 
-        if ((n = sendto(sockFd, buf, strlen(buf), 0,
+        if ((n = sendto(sockFd, lifeGameBoard, LIFE_ROWS*LIFE_COLUMNS*sizeof(char), 0,
 	       (struct sockaddr *) &clientaddr, clientlen)) < 0)
             err_sys("Error in sendto");
     }
