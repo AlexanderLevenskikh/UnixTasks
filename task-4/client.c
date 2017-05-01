@@ -10,8 +10,8 @@
 #define HOSTNAME "localhost"
 #define PORT 8090
 
-#define LIFE_ROWS 5
-#define LIFE_COLUMNS 5
+#define LIFE_ROWS 10
+#define LIFE_COLUMNS 10
 
 void err_sys(char *message);
 

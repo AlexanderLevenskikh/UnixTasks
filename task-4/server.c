@@ -15,8 +15,8 @@
 #define BUFSIZE 4096
 #define PORT 8090
 
-#define LIFE_ROWS 5
-#define LIFE_COLUMNS 5
+#define LIFE_ROWS 10
+#define LIFE_COLUMNS 10
 #define INITIAL_CONF_FILENAME "initialConfiguration"
 
 void err_sys(char *message);
@@ -53,7 +53,7 @@ void main(int argc, char ** argv) {
             else if (child_pid == 0) {
                 gameStep();
             } else {
-                sleep(2);
+                sleep(1);
                 int status;
                 pid_t result = waitpid(child_pid, &status, WNOHANG);
                 if (result == 0) {
@@ -93,7 +93,7 @@ int getAliveAroundNumber(int x, int y) {
     for (int i = -1; i <= 1; i++)
     for (int j = -1; j <= 1; j++) {
         x1 = x+i; y1 = y+j;
-        if ((x1 || y1) && x1 >= 0 && x1 < LIFE_COLUMNS && y1 >= 0 && y1 < LIFE_ROWS && lifeGameBoard[y1*LIFE_ROWS+x1] == 'x')
+        if ((i != 0 || j != 0) && x1 >= 0 && x1 < LIFE_COLUMNS && y1 >= 0 && y1 < LIFE_ROWS && lifeGameBoard[y1*LIFE_ROWS+x1] == '*')
             result++;
     }
     return result;
@@ -105,7 +105,7 @@ void gameStep() {
     for (int i = 0; i < LIFE_ROWS; i++) {
         for (int j = 0; j < LIFE_COLUMNS; j++) {
             int number = getAliveAroundNumber(j, i);
-            if (number == 3) lifeGameBoardCopy[i][j] = 'x';
+            if (number == 3) lifeGameBoardCopy[i][j] = '*';
             if (number < 2 || number > 3) lifeGameBoardCopy[i][j] = '.';
             if (number == 2) lifeGameBoardCopy[i][j] = lifeGameBoard[i*LIFE_ROWS+j];
         }
