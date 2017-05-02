@@ -22,6 +22,7 @@
 #define BUFSIZE 4096
 #define _MAX_INT_DIG 10
 #define ATTEMPTS_MAX 50
+#define MAX_PATH 500
 
 namespace std
 {
@@ -46,10 +47,12 @@ void sigchld_handler(int sig);
 
 void err_sys(const char *);
 
-std::ifstream infile(CONFIG_FILE);
+std::string configPath;
+std::string configFile(CONFIG_FILE);
 
 std::set<pid_t> pid_set;
 pid_t child_pid;
+
 
 int main() {
     signal(SIGHUP, reboot_handler);
@@ -71,6 +74,10 @@ int main() {
     for (fd=0; fd < flim.rlim_max; fd++)
         close(fd);*/
 
+    char * context = get_current_dir_name();
+
+    configPath = std::string(context) + "/" + configFile;
+
     chdir("/");
     openlog("TASK MANAGER", LOG_PID | LOG_CONS, LOG_DAEMON);
     syslog(LOG_INFO, "Started (pid: %d)", getpid());
@@ -81,8 +88,14 @@ int main() {
 }
 
 void process_config() {
+
+    std::ifstream infile(configPath.c_str());
+
+    syslog(LOG_INFO, "Reading configuration from %s", configPath.c_str());
     std::string str,
                 delimiter = " ";
+
+    pid_set.clear();
 
     while (std::getline(infile, str)) {
         if (str.length() > 0) {
@@ -207,14 +220,7 @@ void reboot_handler(int sig) {
         kill((*it), SIGINT);
     }
 
-    sleep(1);
-    while (!pid_set.empty()) {
-        sleep(1);
-        syslog(LOG_INFO, "PID set is not empty!");
-        for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
-            syslog(LOG_INFO, "PID set has a %d pid", (int)(*it));
-        }
-    }
+    sleep(5);
     process_config();
 }
 
@@ -223,7 +229,7 @@ void sigint_handler(int sig) {
     syslog(LOG_INFO, "Send SIGKILL to %d", child_pid);
     kill(child_pid, SIGKILL);
     syslog(LOG_INFO, "Send SIGKILL to %d", getpid());
-    kill(getpid(), SIGKILL);
+    exit(0);
 }
 
 void sigchld_handler(int sig) {
