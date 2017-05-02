@@ -41,8 +41,11 @@ void update_pid(std::string, pid_t);
 void remove_pid_file(std::string &);
 
 void reboot_handler(int sig);
+void sigint_handler(int sig);
 
 void err_sys(const char *);
+
+std::ifstream infile(CONFIG_FILE);
 
 std::set<pid_t> pid_set;
 
@@ -73,7 +76,6 @@ int main() {
 }
 
 void process_config() {
-    std::ifstream infile("/home/alex/Desktop/config");
     std::string str,
                 delimiter = " ";
 
@@ -94,11 +96,15 @@ void process_config() {
                 syslog(LOG_ERR, "Fork in proc %d failed", getppid());
                 break;
             case 0:
+                signal(SIGINT, sigint_handler);
                 execute_process(tokens);
+                syslog(LOG_INFO, "Process pid %d executed", getpid());
+                pid_set.erase(getpid());
                 exit(0);
                 break;
             default:
                 syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getpid());
+                pid_set.insert(pid);
                 break;
             }
         }
@@ -137,7 +143,7 @@ void execute_process(std::vector<std::string> &configuration) {
                 break;
             }
         }
-        sleep(8);
+        sleep(5);
     }
 }
 
@@ -193,11 +199,19 @@ void remove_pid_file(std::string &program_name) {
 void reboot_handler(int sig) {
     syslog(LOG_INFO, "SIGHUP to %d received, send SIGINT to descendants", getpid());
     for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
-        syslog(LOG_INFO, "Send SIGHUP to %d", (int)(*it));
-        kill((*it), SIGHUP);
+        syslog(LOG_INFO, "Send SIGINT to %d", (int)(*it));
+        kill((*it), SIGINT);
     }
-    kill(getpid(), SIGINT);
     process_config();
+}
+
+void sigint_handler(int sig) {
+    syslog(LOG_INFO, "SIGINT to %d received, send SIGKILL to descendants", getpid());
+    for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
+        syslog(LOG_INFO, "Send SIGKILL to %d", (int)(*it));
+        kill((*it), SIGKILL);
+    }
+    kill(getpid(), SIGKILL);
 }
 
 

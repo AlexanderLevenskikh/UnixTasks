@@ -1,0 +1,3 @@
+pwd respawn
+sleep 30 wait
+ping -c 5 ya.ru wait
