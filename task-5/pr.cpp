@@ -42,15 +42,20 @@ void remove_pid_file(std::string &);
 
 void reboot_handler(int sig);
 void sigint_handler(int sig);
+void sigchld_handler(int sig);
 
 void err_sys(const char *);
 
 std::ifstream infile(CONFIG_FILE);
 
 std::set<pid_t> pid_set;
+pid_t child_pid;
 
 int main() {
     signal(SIGHUP, reboot_handler);
+    signal(SIGINT, sigint_handler);
+    signal(SIGCHLD, sigchld_handler);
+
     unsigned int fd;
     struct rlimit flim;
 
@@ -96,15 +101,14 @@ void process_config() {
                 syslog(LOG_ERR, "Fork in proc %d failed", getppid());
                 break;
             case 0:
-                signal(SIGINT, sigint_handler);
                 execute_process(tokens);
                 syslog(LOG_INFO, "Process pid %d executed", getpid());
-                pid_set.erase(getpid());
                 exit(0);
                 break;
             default:
                 syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getpid());
                 pid_set.insert(pid);
+                // TODO sigchld!
                 break;
             }
         }
@@ -123,6 +127,7 @@ void execute_process(std::vector<std::string> &configuration) {
 
     pid_t pid;
 
+    // infinite loop if "respawn" and break after one iteration if "wait"
     while (1) {
         if ((pid = fork()) == -1) {
             syslog(LOG_ERR, "Fork in proc %d failed", getppid());
@@ -131,13 +136,12 @@ void execute_process(std::vector<std::string> &configuration) {
             exit(0);
         } else {
             syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getpid());
-            pid_set.insert(pid);
+            child_pid = pid;
             syslog(LOG_INFO, "Set pid %d in file /tmp/%s", pid, program.c_str());
             update_pid(program, pid);
             syslog(LOG_INFO, "Wait process pid %d executing", pid);
             waitpid(pid, NULL, 0);
             syslog(LOG_INFO, "Process pid %d executed", pid);
-            pid_set.erase(pid);
             if (!isRespawn) {
                 remove_pid_file(program);
                 break;
@@ -202,18 +206,33 @@ void reboot_handler(int sig) {
         syslog(LOG_INFO, "Send SIGINT to %d", (int)(*it));
         kill((*it), SIGINT);
     }
+
+    sleep(1);
+    while (!pid_set.empty()) {
+        sleep(1);
+        syslog(LOG_INFO, "PID set is not empty!");
+        for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
+            syslog(LOG_INFO, "PID set has a %d pid", (int)(*it));
+        }
+    }
     process_config();
 }
 
 void sigint_handler(int sig) {
     syslog(LOG_INFO, "SIGINT to %d received, send SIGKILL to descendants", getpid());
-    for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
-        syslog(LOG_INFO, "Send SIGKILL to %d", (int)(*it));
-        kill((*it), SIGKILL);
-    }
+    syslog(LOG_INFO, "Send SIGKILL to %d", child_pid);
+    kill(child_pid, SIGKILL);
+    syslog(LOG_INFO, "Send SIGKILL to %d", getpid());
     kill(getpid(), SIGKILL);
 }
 
+void sigchld_handler(int sig) {
+    pid_t pid = wait(NULL);
+    if (pid_set.find(pid) != pid_set.end()) {
+            syslog(LOG_INFO, "Erase pid %d from set", pid);
+        pid_set.erase(pid);
+    }
+}
 
 void err_sys(const char *message) {
     perror(message);
