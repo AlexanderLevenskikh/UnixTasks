@@ -13,7 +13,9 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <queue>
 #include <set>
+#include <map>
 #include <iostream>
 
 #define CONFIG_FILE "config"
@@ -33,21 +35,23 @@ namespace std
 
 void process_config();
 void execute_process(std::vector<std::string> &);
-void execute_once_fork(std::vector<std::string> &, std::string &, bool);
 void execute_program(std::vector<std::string> &, std::string &);
 
 void update_pid(std::string, pid_t);
 void remove_pid_file(std::string &);
+
+void reboot_handler(int sig);
 
 void err_sys(const char *);
 
 std::set<pid_t> pid_set;
 
 int main() {
-    /*unsigned int fd;
+    signal(SIGHUP, reboot_handler);
+    unsigned int fd;
     struct rlimit flim;
 
-    if (getppid() != 1){
+    /*if (getppid() != 1){
         signal(SIGTTOU, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTIN, SIG_IGN);
@@ -64,6 +68,8 @@ int main() {
     syslog(LOG_INFO, "Started (pid: %d)", getpid());
 
     process_config();
+    while(1) {
+    }
 }
 
 void process_config() {
@@ -81,14 +87,26 @@ void process_config() {
                 tokens.push_back(token);
             }
             tokens.push_back(str.substr(last, next - last));
-            syslog(LOG_INFO, "Parsing string %s and executing process", str.c_str());
-            execute_process(tokens);
+
+            pid_t pid;
+            switch(pid = fork()) {
+            case -1:
+                syslog(LOG_ERR, "Fork in proc %d failed", getppid());
+                break;
+            case 0:
+                execute_process(tokens);
+                exit(0);
+                break;
+            default:
+                syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getpid());
+                break;
+            }
         }
     }
-
 }
 
 void execute_process(std::vector<std::string> &configuration) {
+
     int configLength = configuration.size();
 
     bool isRespawn = configuration[configLength-1] == "respawn";
@@ -98,57 +116,28 @@ void execute_process(std::vector<std::string> &configuration) {
     arguments = std::vector<std::string>(configuration.begin()+1, configuration.end()-1);
 
     pid_t pid;
-    switch (pid = fork()) {
-        case -1:
+
+    while (1) {
+        if ((pid = fork()) == -1) {
             syslog(LOG_ERR, "Fork in proc %d failed", getppid());
-            break;
-        case 0:
-            if (isRespawn) {
-
-                while (1) {
-                    execute_once_fork(arguments, program, isRespawn);
-                    sleep(5);
-                }
-            } else
-                execute_once_fork(arguments, program, isRespawn);
-            pid_set.erase(pid);
+        } else if (pid == 0) {
+            execute_program(arguments, program);
             exit(0);
-
-        default:
-            syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getppid());
+        } else {
+            syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getpid());
             pid_set.insert(pid);
             syslog(LOG_INFO, "Set pid %d in file /tmp/%s", pid, program.c_str());
             update_pid(program, pid);
-            break;
-    }
-}
-
-void execute_once_fork(std::vector<std::string> &arguments, std::string &program_name, bool isRespawn) {
-    // child pid for execution
-    pid_t pid;
-    switch (pid = fork()) {
-        case -1:
-            // logging
-            syslog(LOG_ERR, "Fork in proc %d failed", getppid());
-            break;
-        case 0:
-            execute_program(arguments, program_name);
-            exit(0);
-
-        default:
-            syslog(LOG_INFO, "Starting child process with pid %d (parent pid: %d)", pid, getppid());
-            pid_set.insert(pid);
-            syslog(LOG_INFO, "Set pid %d in file /tmp/%s", pid, program_name.c_str());
-            update_pid(program_name, pid);
             syslog(LOG_INFO, "Wait process pid %d executing", pid);
             waitpid(pid, NULL, 0);
             syslog(LOG_INFO, "Process pid %d executed", pid);
             pid_set.erase(pid);
             if (!isRespawn) {
-                remove_pid_file(program_name);
+                remove_pid_file(program);
+                break;
             }
-
-            break;
+        }
+        sleep(8);
     }
 }
 
@@ -165,8 +154,8 @@ void execute_program(std::vector<std::string> &arguments, std::string &program_n
     while(1){
         if (attempts_count == ATTEMPTS_MAX){
             attempts_count = 0;
-            syslog(LOG_WARNING, "So many execution attempts of %s. Try again after 30 min.", program_name.c_str());
-            sleep(1800);
+            syslog(LOG_WARNING, "So many execution attempts of %s. Try again after 60 min.", program_name.c_str());
+            sleep(3600);
         }
         if (execvp(strdup(program_name.c_str()), exec_args) < 0){
             syslog(LOG_INFO, "Program %s execution failed. Attempt number: %d", program_name.c_str(), attempts_count);
@@ -200,6 +189,17 @@ void remove_pid_file(std::string &program_name) {
         syslog(LOG_ERR, "Can't remove file %s", path);
     }
 }
+
+void reboot_handler(int sig) {
+    syslog(LOG_INFO, "SIGHUP to %d received, send SIGINT to descendants", getpid());
+    for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
+        syslog(LOG_INFO, "Send SIGHUP to %d", (int)(*it));
+        kill((*it), SIGHUP);
+    }
+    kill(getpid(), SIGINT);
+    process_config();
+}
+
 
 void err_sys(const char *message) {
     perror(message);
