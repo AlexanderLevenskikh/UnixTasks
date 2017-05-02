@@ -44,6 +44,7 @@ void remove_pid_file(std::string &);
 void reboot_handler(int sig);
 void sigint_handler(int sig);
 void sigchld_handler(int sig);
+void sigterm_handler(int sig);
 
 void err_sys(const char *);
 
@@ -52,17 +53,21 @@ std::string configFile(CONFIG_FILE);
 
 std::set<pid_t> pid_set;
 pid_t child_pid;
+pid_t root_pid;
+
+bool isReboot = false;
 
 
 int main() {
     signal(SIGHUP, reboot_handler);
     signal(SIGINT, sigint_handler);
     signal(SIGCHLD, sigchld_handler);
+    signal(SIGTERM, sigterm_handler);
 
     unsigned int fd;
     struct rlimit flim;
 
-    /*if (getppid() != 1){
+    if (getppid() != 1){
         signal(SIGTTOU, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
         signal(SIGTTIN, SIG_IGN);
@@ -72,7 +77,7 @@ int main() {
     }
     getrlimit(RLIMIT_NOFILE, &flim);
     for (fd=0; fd < flim.rlim_max; fd++)
-        close(fd);*/
+        close(fd);
 
     char * context = get_current_dir_name();
 
@@ -81,9 +86,15 @@ int main() {
     chdir("/");
     openlog("TASK MANAGER", LOG_PID | LOG_CONS, LOG_DAEMON);
     syslog(LOG_INFO, "Started (pid: %d)", getpid());
+    root_pid = getpid();
 
     process_config();
     while(1) {
+        if (isReboot) {
+            isReboot = false;
+            sleep(5);
+            process_config();
+        }
     }
 }
 
@@ -214,22 +225,28 @@ void remove_pid_file(std::string &program_name) {
 }
 
 void reboot_handler(int sig) {
-    syslog(LOG_INFO, "SIGHUP to %d received, send SIGINT to descendants", getpid());
-    for (std::set<pid_t>::iterator it = pid_set.begin(); it != pid_set.end(); it++) {
-        syslog(LOG_INFO, "Send SIGINT to %d", (int)(*it));
-        kill((*it), SIGINT);
+    if (getpid() == root_pid) {
+        syslog(LOG_INFO, "SIGHUP to %d received, send SIGINT to group", getpid());
+        pid_t gid = 0;
+        kill(gid, SIGINT);
+        isReboot = true;
     }
-
-    sleep(5);
-    process_config();
 }
 
 void sigint_handler(int sig) {
-    syslog(LOG_INFO, "SIGINT to %d received, send SIGKILL to descendants", getpid());
-    syslog(LOG_INFO, "Send SIGKILL to %d", child_pid);
-    kill(child_pid, SIGKILL);
-    syslog(LOG_INFO, "Send SIGKILL to %d", getpid());
-    exit(0);
+    if (getpid() != root_pid) {
+        syslog(LOG_INFO, "SIGHUP to %d received", getpid());
+        syslog(LOG_INFO, "Send SIGKILL to %d", getpid());
+        kill(getpid(), SIGINT);
+        exit(0);
+    }
+}
+
+void sigterm_handler(int sig) {
+    if (getpid() == root_pid) {
+        pid_t gid = 0;
+        kill(gid, SIGKILL);
+    }
 }
 
 void sigchld_handler(int sig) {
