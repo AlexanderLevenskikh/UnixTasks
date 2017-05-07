@@ -10,8 +10,8 @@
 #define MAX_USERNAMES_COUNT 4096
 #define BUFSIZE 4096
 
-char *usernames[MAX_USERNAMES_COUNT];
-char *passwords[MAX_USERNAMES_COUNT];
+char usernames[MAX_USERNAMES_COUNT][MAX_USERNAME_LENGTH];
+char passwords[MAX_USERNAMES_COUNT][MAX_PASSWORD_LENGTH];
 
 char *filename, *username, *password, *file_part_str;
 int file_part;
@@ -51,10 +51,9 @@ int main(int argc, char ** argv) {
 	if (filename_length > MAX_LENGTH_FILENAME) {
 		err_sys("Incorrect filename length.");
 	}
-	strcpy(lockfile, filename);
-	strcpy(lockfile, ".lck");
-	strcpy(locklockfile, lockfile);
-	strcpy(locklockfile, ".lck");
+
+    snprintf(lockfile, sizeof lockfile, "%s%s", filename, ".lck");
+    snprintf(locklockfile, sizeof lockfile, "%s%s", filename, ".lck.lck");
 
 	change_password(file_part);
 
@@ -62,9 +61,16 @@ int main(int argc, char ** argv) {
 }
 
 void change_password(int file_part) {
-	while (file_exists(locklockfile) || is_file_part_locked(locklockfile, file_part, true)) {
-		sleep(5);
+	while (file_exists(locklockfile)) {
+        printf("%s exists. Wait.\n", locklockfile);
+        fflush(stdout);
+        sleep(2);
 	}
+
+	while(is_file_part_locked(lockfile, file_part, true)) {
+		sleep(1);
+	}
+
     // lock the filename.lck file
     lock_file(locklockfile, 'w');
     // lock the filename file part (from arguments)
@@ -72,15 +78,26 @@ void change_password(int file_part) {
     unlock_file(locklockfile);
 
     read_file_part_and_change_password(filename, username, password);
+    for (int i=0;i<number_of_strings;i++) {
+        printf("%s %s\n", usernames[i], passwords[i]);
+    }
 
     // remove read lock from file part
     lock_file(locklockfile, 'w');
     unlock_file_part(lockfile);
     unlock_file(locklockfile);
 
-    while (file_exists(locklockfile) || is_file_part_locked(locklockfile, file_part, false)) {
-		sleep(5);
+    while (file_exists(locklockfile)) {
+        printf("%s exists. Wait.\n", locklockfile);
+        fflush(stdout);
+        sleep(2);
 	}
+
+	while(is_file_part_locked(lockfile, file_part, false)) {
+        fflush(stdout);
+		sleep(1);
+	}
+
     // lock filename part on write
     lock_file(locklockfile, 'w');
     lock_file_part(lockfile, 'w', file_part);
@@ -99,29 +116,28 @@ bool is_file_part_locked(char * lockfile, int file_part, bool want_locking_on_re
     FILE *fp;
     bool result = false;
 
-	if ((fp = fopen(lockfile, "r")) == NULL) {
-		err_sys("Can't open lockfile!");
-	}
-	int pid, locked_part;
-	char lock_type;
-
-	if (want_locking_on_read) {
-        while (fscanf(fp, "%d %c %d\n", &pid, &lock_type, &locked_part)) {
-            if (lock_type == 'w') {
-                printf("Part of file %s (1..%d) locked by pid %d on write. Can't lock on read.", filename, locked_part, pid);
-                result = true;
-                break;
+    if (file_exists(lockfile)) {
+        if (want_locking_on_read) {
+            if ((fp = fopen(lockfile, "r")) == NULL) {
+                err_sys("Can't open lockfile!");
             }
-        }
+            int pid, locked_part;
+            char lock_type;
 
-	} else {
-        if (file_exists(lockfile)) {
-            printf("File %s part (1..%d) locked by pid %d. Can't lock on write", filename, locked_part, pid);
+            while (fscanf(fp, "%d %c %d\n", &pid, &lock_type, &locked_part) != EOF) {
+                if (lock_type == 'w') {
+                    printf("Part of file %s (1..%d) locked by pid %d on write. Can't lock on read.\n", filename, locked_part, pid);
+                    result = true;
+                    break;
+                }
+            }
+            fclose(fp);
+        } else {
+            printf("File %s exists. Can't lock part on write", filename);
             result = true;
         }
-	}
+    }
 
-    fclose(fp);
     return result;
 }
 
@@ -170,27 +186,36 @@ void unlock_file_part(char * lockfile) {
 
 	int pid, locked_part;
 	char lock_type;
+	int counter = 0;
 
-	while (fscanf(fp, "%d %c %d\n", &pid, &lock_type, &locked_part)) {
+	while (fscanf(fp, "%d %c %d\n", &pid, &lock_type, &locked_part) != EOF) {
         if (pid != current_pid) {
+            counter++;
             fprintf(tempfile, "%d %c %d\n", pid, lock_type, locked_part);
         }
      }
 
     fclose(fp);
-    if ((fp = fopen(lockfile, "w+")) == NULL) {
-        err_sys("Can't open lockfile!");
-    }
 
-    while (fscanf(tempfile, "%d %c %d\n", &pid, &lock_type, &locked_part)) {
-        fprintf(fp, "%d %c %d\n", pid, lock_type, locked_part);
+    if (counter == 0) {
+        if(remove(lockfile) != 0) {
+            printf("Error: unable to delete the file %s", lockfile);
+        }
+    } else {
+        if ((fp = fopen(lockfile, "w+")) == NULL) {
+            err_sys("Can't open lockfile!");
+        }
+
+        while (fscanf(tempfile, "%d %c %d\n", &pid, &lock_type, &locked_part) != EOF) {
+            fprintf(fp, "%d %c %d\n", pid, lock_type, locked_part);
+        }
+        fclose(fp);
     }
 
     fclose(tempfile);
     if(remove("/tmp/tmp_lockfile") != 0) {
         printf("Error: unable to delete the file %s", "/tmp/tmp_lockfile");
     }
-    fclose(fp);
 }
 
 void read_file_part_and_change_password(char* filename, char* username, char* password) {
@@ -200,16 +225,9 @@ void read_file_part_and_change_password(char* filename, char* username, char* pa
 		err_sys("Can't open passwords file");
 	}
 
-    char current_user[MAX_USERNAME_LENGTH];
-    char current_password[MAX_PASSWORD_LENGTH];
-
-    while (fscanf(fp, "%s %s\n", current_user, current_password)) {
-        usernames[number_of_strings] = current_user;
-
-        if (strcmp(username, current_user) != 0) {
-            passwords[number_of_strings] = current_password;
-        } else {
-            passwords[number_of_strings] = password;
+    while (fscanf(fp, "%s %s\n", usernames[number_of_strings], passwords[number_of_strings]) != EOF) {
+        if (strcmp(usernames[number_of_strings], username) == 0) {
+            snprintf(passwords[number_of_strings], MAX_PASSWORD_LENGTH, "%s", password);
         }
         number_of_strings++;
     }
@@ -220,7 +238,7 @@ void read_file_part_and_change_password(char* filename, char* username, char* pa
 void write_file_part(char* filename) {
     FILE *fp;
 
-    if ((fp = fopen(lockfile, "w+")) == NULL) {
+    if ((fp = fopen(filename, "w+")) == NULL) {
 		err_sys("Can't open passwords file");
 	}
 
