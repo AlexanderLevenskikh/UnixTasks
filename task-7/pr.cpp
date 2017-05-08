@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 
 // stl and other cpp libs
 #include <iostream>
@@ -78,11 +79,13 @@ struct matrix {
     }
 
     void print_matrix() {
+        std::cout<<">>>\n";
         for (int i = 0; i < vector_size; i++) {
             for (int j = 0; j < vector_size; j++)
                 std::cout<<matrix_data[i][j]<<" ";
             std::cout<<"\n";
         }
+        std::cout<<"<<<\n";
     }
 
     std::string serialize_block() {
@@ -139,6 +142,21 @@ struct matrix {
         return result;
     }
 
+    matrix multiplication(matrix other_matrix) {
+        matrix result = matrix(vector_size);
+        result.init_matrix();
+
+        for (int i = 0; i < vector_size; i++)
+        for (int j = 0; j < vector_size; j++) {
+            int sum = 0;
+            for (int k = 0; k < vector_size; k++)
+                sum += matrix_data[i][k] * other_matrix.matrix_data[k][j];
+            result.matrix_data[i][j] = sum;
+        }
+
+        return result;
+    }
+
     matrix square() {
         matrix result = matrix(vector_size);
         result.init_matrix();
@@ -154,12 +172,26 @@ struct matrix {
         return result;
     }
 
+    void add_matrix(matrix other_matrix) {
+        for (int i = 0; i < vector_size; i++)
+        for (int j = 0; j < vector_size; j++) {
+            matrix_data[i][j] += other_matrix.matrix_data[i][j];
+        }
+    }
+
+    void add_part(matrix part, int row, int column) {
+        for (int i = 0; i < BLOCK_ROWS_COUNT; i++)
+        for (int j = 0; j < BLOCK_ROWS_COUNT; j++) {
+            matrix_data[row + i][column + j] = part.matrix_data[i][j];
+        }
+    }
+
 };
 
 matrix input_matrix;
 
 void exec_handlers();
-
+matrix aggregate_data();
 
 int main(int argc, char **argv) {
     char *matrixFileName;
@@ -179,11 +211,26 @@ int main(int argc, char **argv) {
     int wpid, i, res;
 	while((wpid = wait(NULL)) > 0);
 
-	matrix aggregated = aggregate_data();
+    aggregate_data().print_matrix();
 }
 
 matrix aggregate_data() {
+    matrix result_matrix = matrix();
+    result_matrix.init_matrix();
 
+    for (int i = 0; i < ROWS_COUNT; i+=BLOCK_ROWS_COUNT) {
+        for (int j = 0; j < ROWS_COUNT; j+=BLOCK_ROWS_COUNT) {
+            char buf[BUFFER_SIZE];
+            read(pipes[i + j/BLOCK_ROWS_COUNT], buf, sizeof(char)*BUFFER_SIZE);
+            std::string serialized = buf;
+            matrix temp;
+            // deserialization
+            temp = temp.deserialize_block(serialized);
+            result_matrix.add_part(temp, i, j);
+        }
+    }
+
+    return result_matrix;
 }
 
 void run_process(int read_descr, int write_descr, int delay) {
@@ -198,17 +245,22 @@ void run_process(int read_descr, int write_descr, int delay) {
 		err_sys("Errror in select\n");
 	}
 
-	// Time to get data from the pipe (serialized data)
-    char buf[BUFFER_SIZE];
-    read(read_descr, buf, sizeof(char)*BUFFER_SIZE);
-    std::string serialized = buf;
-    matrix temp;
-    // deserialization
-    temp = temp.deserialize_block(serialized);
-    // multiply on self
-    temp = temp.square();
+	// Time to get data from the pipe (order number)
+    int number;
+    read(read_descr, &number, sizeof(int));
+    int i = (number / BLOCK_ROWS_COUNT) * BLOCK_ROWS_COUNT,
+        j = (number % BLOCK_ROWS_COUNT) * BLOCK_ROWS_COUNT;
+
+    matrix result_matrix = matrix(BLOCK_ROWS_COUNT);
+    result_matrix.init_matrix();
+
+    // Cij = Sum(s=0..block_rows_count-1){Ais*Asj}
+    for (int k = 0; k < ROWS_COUNT; k+=2) {
+        result_matrix.add_matrix(input_matrix.get_matrix_block(i, k).multiplication(input_matrix.get_matrix_block(k, j)));
+    }
+
     // serialize result
-    std::string result_serialized = temp.serialize_block();
+    std::string result_serialized = result_matrix.serialize_block();
     char * result_serialized_cstr = (char*) result_serialized.c_str();
 
 
@@ -222,8 +274,7 @@ void run_process(int read_descr, int write_descr, int delay) {
 
 void exec_handlers() {
     // Handlers count == count of blocks (ROWS_COUNT)
-    for (int i = 0; i < ROWS_COUNT; i+=BLOCK_ROWS_COUNT)
-    for (int j = 0; j < ROWS_COUNT; j+=BLOCK_ROWS_COUNT) {
+    for (int i = 0; i < ROWS_COUNT; i++) {
         int fd[2];
         if (pipe(fd) == -1) {
             err_sys("Can't create pipe\n");
@@ -236,9 +287,8 @@ void exec_handlers() {
             run_process(fd[0], fd[1], 2);
             exit(0);
         } else {
-            std::string str = input_matrix.get_matrix_block(i, j).serialize_block();
-            char *serialized_matrix_part = (char*) str.c_str();
-            write(fd[1], serialized_matrix_part, sizeof(char)*str.length());
+            // send the order number (process will be able to determine position of block)
+            write(fd[1], &i, sizeof(int));
             pipes[i] = fd[0];
         }
     }
