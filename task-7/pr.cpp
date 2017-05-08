@@ -217,10 +217,11 @@ int main(int argc, char **argv) {
 matrix aggregate_data() {
     matrix result_matrix = matrix();
     result_matrix.init_matrix();
+    char buf[BUFFER_SIZE];
 
     for (int i = 0; i < ROWS_COUNT; i+=BLOCK_ROWS_COUNT) {
         for (int j = 0; j < ROWS_COUNT; j+=BLOCK_ROWS_COUNT) {
-            char buf[BUFFER_SIZE];
+            memset(buf, 0, sizeof(buf));
             read(pipes[i + j/BLOCK_ROWS_COUNT], buf, sizeof(char)*BUFFER_SIZE);
             std::string serialized = buf;
             matrix temp;
