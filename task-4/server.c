@@ -26,9 +26,10 @@ int initServer();
 void gameStep();
 void exitHandler(int sig);
 
-volatile char *lifeGameBoard;
+char *lifeGameBoard;
 
 void main(int argc, char ** argv) {
+    int i, j;
 
     // space for shared board
     lifeGameBoard = mmap(0, LIFE_ROWS*LIFE_COLUMNS*sizeof(char), PROT_READ|PROT_WRITE,
@@ -62,9 +63,9 @@ void main(int argc, char ** argv) {
                   err_sys("Waitpid error");
                 } else {
                     system("@cls||clear");
-                    for (int i = 0; i < LIFE_ROWS; i++) {
+                    for (i = 0; i < LIFE_ROWS; i++) {
                         printf("\n");
-                        for (int j = 0; j < LIFE_COLUMNS; j++)
+                        for (j = 0; j < LIFE_COLUMNS; j++)
                             printf("%c", lifeGameBoard[i*LIFE_ROWS+j]);
                     }
                     printf("\n\n");
@@ -89,9 +90,9 @@ void exitHandler(int sig) {
 
 int getAliveAroundNumber(int x, int y) {
     int result = 0, x1, y1;
-
-    for (int i = -1; i <= 1; i++)
-    for (int j = -1; j <= 1; j++) {
+    int i, j;
+    for (i = -1; i <= 1; i++)
+    for (j = -1; j <= 1; j++) {
         x1 = x+i; y1 = y+j;
         if ((i != 0 || j != 0) && x1 >= 0 && x1 < LIFE_COLUMNS && y1 >= 0 && y1 < LIFE_ROWS && lifeGameBoard[y1*LIFE_ROWS+x1] == '*')
             result++;
@@ -102,8 +103,10 @@ int getAliveAroundNumber(int x, int y) {
 void gameStep() {
     char lifeGameBoardCopy[LIFE_ROWS][LIFE_COLUMNS];
 
-    for (int i = 0; i < LIFE_ROWS; i++) {
-        for (int j = 0; j < LIFE_COLUMNS; j++) {
+    int i, j;
+
+    for (i = 0; i < LIFE_ROWS; i++) {
+        for (j = 0; j < LIFE_COLUMNS; j++) {
             int number = getAliveAroundNumber(j, i);
             if (number == 3) lifeGameBoardCopy[i][j] = '*';
             if (number < 2 || number > 3) lifeGameBoardCopy[i][j] = '.';
@@ -112,8 +115,8 @@ void gameStep() {
     }
 
 
-    for (int i = 0; i < LIFE_ROWS; i++)
-    for (int j = 0; j < LIFE_COLUMNS; j++)
+    for (i = 0; i < LIFE_ROWS; i++)
+    for (j = 0; j < LIFE_COLUMNS; j++)
         lifeGameBoard[i*LIFE_ROWS+j] = lifeGameBoardCopy[i][j];
 
     exit(0);
@@ -174,7 +177,7 @@ int initServer() {
 }
 
 void initLifeBoard() {
-    int fd, n;
+    int fd, n, i, j;
     char newline;
     char buffer[BUFSIZE];
 
@@ -186,8 +189,8 @@ void initLifeBoard() {
         err_sys("Error while reading configuration file (incorrect format)");
     }
 
-    for (int i = 0; i < LIFE_ROWS; i++)
-    for (int j = 0; j < LIFE_COLUMNS; j++) {
+    for (i = 0; i < LIFE_ROWS; i++)
+    for (j = 0; j < LIFE_COLUMNS; j++) {
         lifeGameBoard[i*LIFE_ROWS + j] = buffer[i*(LIFE_ROWS+1) + j];
     }
 

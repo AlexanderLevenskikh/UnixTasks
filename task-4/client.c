@@ -16,7 +16,7 @@
 void err_sys(char *message);
 
 void main(int argc, char ** argv) {
-    int sockFd, n, serverlen;
+    int sockFd, n, serverlen, i, j;
     char *hostName, *hostaddrp;
     struct sockaddr_in serveraddr;
     struct hostent *serverHostInfo;
@@ -50,8 +50,8 @@ void main(int argc, char ** argv) {
       err_sys("ERROR in recvfrom");
 
       printf("Current game state\n");
-    for (int i=0; i<LIFE_ROWS; i++) {
-        for (int j=0; j<LIFE_COLUMNS; j++) {
+    for (i=0; i<LIFE_ROWS; i++) {
+        for (j=0; j<LIFE_COLUMNS; j++) {
             printf("%c", gameBoard[i*LIFE_ROWS + j]);
         }
         printf("\n");

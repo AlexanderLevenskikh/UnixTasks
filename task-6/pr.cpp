@@ -63,17 +63,19 @@ int main(int argc, char ** argv) {
 }
 
 void change_password(int begin_of_part, int end_of_part) {
-    while (file_exists(lockfile)) {
+    while (file_exists(locklockfile)) {
         printf("%s exists. Wait.\n", locklockfile);
         fflush(stdout);
         sleep(5);
 	}
 
 	lock_file(locklockfile, 'w');
-	sleep(5);
+	sleep(2);
 
 	while(is_file_part_locked(lockfile, begin_of_part, end_of_part)) {
         unlock_file(locklockfile);
+        printf("Part of %s locked. Wait.\n", lockfile);
+        fflush(stdout);
 		sleep(5);
 		lock_file(locklockfile, 'w');
 	}
@@ -85,6 +87,12 @@ void change_password(int begin_of_part, int end_of_part) {
 
     change_password_in_file_part(filename, username, password, begin_of_part-1, end_of_part-1);
     sleep(5);
+
+    while (file_exists(locklockfile)) {
+        printf("%s exists. Wait.\n", locklockfile);
+        fflush(stdout);
+        sleep(5);
+	}
 
     lock_file(locklockfile, 'w');
     sleep(5);

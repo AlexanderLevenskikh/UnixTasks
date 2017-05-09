@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
     char *unzippedSparse, *unzipped;
 
     if (argc > 3 || argc < 2) {
-        err_sys("./pr unzipped [unzippedSparse]");
+        err_sys("Usage: ./pr unzipped [unzippedSparse]");
     } else if (argc == 2) {
         unzipped = argv[1];
         unzippedSparse = "file_unzipped_sparse";
@@ -43,8 +43,9 @@ int main(int argc, char **argv) {
     while ((number_of_bytes = read(unzippedFd, buffer, BUFFSIZE)) > 0) {
         int counter = 0;
         char *pointer = buffer;
+	int i = 0;
 
-        for (int i=0; i<number_of_bytes; i++) {
+        for (i=0; i<number_of_bytes; i++) {
 
             if (*pointer == 0) {
                 counter++;
