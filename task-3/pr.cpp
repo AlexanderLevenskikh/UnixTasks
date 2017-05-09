@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <algorithm>
 
 #define BUFFSIZE 4096
@@ -16,9 +17,9 @@
 
 void err_sys(const char* x);
 void sprintfFileError(char* filename, const char* message);
-void addNumbersFromFile(char * filename, std::vector<std::string> * v);
-bool stringComparator(std::string &s1, std::string &s2);
-void sortingProcedure(std::vector <std::string> *numbers);
+void addNumbersFromFile(char * filename, std::vector<int> * v);
+void sortingProcedure(std::vector <int> *numbers);
+bool string_to_int(std::string str, int &x);
 
 int pid;
 bool setSimulatedDelayInChild = false;
@@ -39,7 +40,7 @@ int main(int argc, char ** argv) {
         outputFileName = argv[filesCount];
     }
 
-    std::vector <std::string> *numbers = new std::vector<std::string>();
+    std::vector <int> *numbers = new std::vector<int>();
 
     for (int i = 1; i < filesCount; i++) {
         addNumbersFromFile(argv[i], numbers);
@@ -52,11 +53,8 @@ int main(int argc, char ** argv) {
         sprintfFileError(outputFileName, "Can't create file %s for write.");
     }
 
-    for (std::vector<std::string>::iterator it = numbers->begin(); it != numbers->end(); it++) {
-        const char *buf = it->c_str();
-        if (dprintf(outputFd, "%s \n", buf) < strlen(buf) + 2) {
-            sprintfFileError(outputFileName, "Can't write to file %s.");
-        }
+    for (std::vector<int>::iterator it = numbers->begin(); it != numbers->end(); it++) {
+        dprintf(outputFd, "%d \n", (*it));
     }
 
 
@@ -67,7 +65,7 @@ void timeLimitExceed() {
     err_sys("Sort is broken (time limit exceed)");
 }
 
-void sortingProcedure(std::vector <std::string> *numbers) {
+void sortingProcedure(std::vector <int> *numbers) {
     if ((pid = fork()) < 0) {
         err_sys("Can't fork the process");
     } else if (pid == 0) {
@@ -76,7 +74,7 @@ void sortingProcedure(std::vector <std::string> *numbers) {
         if (setSimulatedDelayInChild) {
             sleep(5);
         }
-        std::sort(numbers->begin(), numbers->end(), stringComparator);
+        std::sort(numbers->begin(), numbers->end());
     } else {
         // return to parent process
         int status;
@@ -90,7 +88,7 @@ void sortingProcedure(std::vector <std::string> *numbers) {
     }
 }
 
-void addNumbersFromFile(char * filename, std::vector<std::string> * v) {
+void addNumbersFromFile(char * filename, std::vector<int> * v) {
     int fd;
 
     if ((fd = open(filename, O_RDONLY)) < 0) {
@@ -99,30 +97,40 @@ void addNumbersFromFile(char * filename, std::vector<std::string> * v) {
 
     int n;
     char currentSymbol;
-    std::string *currentString = new std::string();
+    std::string currentString = std::string();
     bool state = false;
 
     while ((n = read(fd, &currentSymbol, sizeof(char))) > 0) {
         if ((currentSymbol >= '0' && currentSymbol <= '9')) {
             if (!state)
                 state = true;
-            currentString->push_back(currentSymbol);
+            currentString.push_back(currentSymbol);
         } else if (state && (currentSymbol < '0' || currentSymbol > '9')) {
             state = false;
-            v->push_back(*currentString);
-            currentString = new std::string();
+            int value;
+            if (!string_to_int(currentString, value)) {
+                err_sys("Can't convert string to int\n");
+            }
+            v->push_back(value);
+            currentString = std::string();
         }
     }
 
 }
 
-bool stringComparator(std::string &s1, std::string &s2) {
-    if (s1.length() < s2.length())
-            return true;
-        if (s2.length() < s1.length())
-            return false;
-        else
-    return (s1 < s2);
+bool string_to_int(std::string str, int &x)
+{
+    std::istringstream ss(str);
+
+    while (!ss.eof())
+    {
+       if (ss >> x)
+           return true;
+
+       ss.clear();
+       ss.ignore();
+    }
+    return false; // There is no integer!
 }
 
 void sprintfFileError(char* filename, const char* message) {
