@@ -5,47 +5,41 @@
 #include <sys/types.h>
 #include <stdlib.h>
 
-#define BUFFSIZE 4096
+#define BUFFSIZE 1024
 
 void err_sys(const char* x);
 
 int main(int argc, char **argv) {
 
-    char *unzippedSparse, *unzipped;
+    int totalSize = 0;
 
-    if (argc > 3 || argc < 2) {
-        err_sys("Usage: ./pr unzipped [unzippedSparse]");
-    } else if (argc == 2) {
-        unzipped = argv[1];
-        unzippedSparse = "file_unzipped_sparse";
-    } else if (argc == 3) {
-        unzipped = argv[1];
-        unzippedSparse = argv[2];
+    char *unzippedSparse;
+
+    if (argc != 2) {
+        err_sys("Usage: ./pr output-filename");
     }
 
-    struct stat stat_struct;
-    int unzippedFd = open(unzipped, O_RDONLY);
+    unzippedSparse = argv[1];
 
-    fstat(unzippedFd, &stat_struct);
-
-    int fd = creat(unzippedSparse, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fd < 0) {
+    int fd;
+    if ((fd = creat(unzippedSparse, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0) {
         char *error_str;
         sprintf(error_str, "Can't create file %s for write", unzippedSparse);
         err_sys(error_str);
     }
 
-    ftruncate(fd, stat_struct.st_size);
-
     int number_of_bytes;
     char buffer[BUFFSIZE];
 
-    while ((number_of_bytes = read(unzippedFd, buffer, BUFFSIZE)) > 0) {
+    while ((number_of_bytes = read(STDIN_FILENO, buffer, BUFFSIZE)) > 0) {
+        totalSize += number_of_bytes;
+        ftruncate(fd, totalSize);
+
         int counter = 0;
         char *pointer = buffer;
-	int i = 0;
+        int i;
 
-        for (i=0; i<number_of_bytes; i++) {
+        for (i = 0; i < number_of_bytes; i++) {
 
             if (*pointer == 0) {
                 counter++;

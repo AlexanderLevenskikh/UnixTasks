@@ -4,7 +4,7 @@ Usage:
 
 ```
 gcc pr.c -o pr
-./pr unzipped [output_unzipped_sparse_file]
+./pr output_unzipped_sparse_file
 ```
 
 or script for testing
